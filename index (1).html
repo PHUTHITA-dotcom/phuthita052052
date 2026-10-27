@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>แดชบอร์ดการระบาดของโรคโควิด-19 ประเทศไทย</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f3f5f9;--card:#fff;--tx:#1f2937;--mut:#6b7280;--pri:#c2410c;--bd:#e5e7eb}
+@media(prefers-color-scheme:dark){:root{--bg:#111827;--card:#1f2937;--tx:#f3f4f6;--mut:#9ca3af;--bd:#374151}}
+*{box-sizing:border-box}body{margin:0;font-family:'Sarabun',system-ui,sans-serif;background:var(--bg);color:var(--tx)}
+header{padding:14px 20px;background:#9a3412;color:#fff}header h1{margin:0;font-size:1.35rem}header p{margin:2px 0 0;font-size:.85rem;opacity:.9}
+.wrap{max-width:1400px;margin:auto;padding:12px}
+.filters{display:flex;flex-wrap:wrap;gap:10px;align-items:end;background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px 12px;margin-bottom:12px}
+.filters label{display:flex;flex-direction:column;font-size:.75rem;color:var(--mut);gap:2px}
+.filters select,.filters input,.filters button{font:inherit;padding:5px 8px;border:1px solid var(--bd);border-radius:6px;background:var(--bg);color:var(--tx)}
+.filters button{cursor:pointer;background:var(--pri);color:#fff;border:0}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:10px;margin-bottom:12px}
+.kpi,.card{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:10px 14px}
+.kpi b{display:block;font-size:1.6rem;color:var(--pri)}.kpi span{font-size:.8rem;color:var(--mut)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,420px),1fr));gap:12px;margin-bottom:12px}
+.card h2{margin:0 0 6px;font-size:1rem}.card small{color:var(--mut)}
+.map{height:480px;border-radius:8px}.ch{position:relative;height:290px}
+.legend{background:var(--card);color:var(--tx);padding:6px 8px;border-radius:6px;font-size:.75rem;line-height:1.35}
+.legend i{display:inline-block;width:14px;height:12px;margin-right:5px;vertical-align:middle}
+#status{font-size:.78rem;color:var(--mut);margin:4px 0 10px}
+</style>
+</head>
+<body>
+<header><h1>แดชบอร์ดการระบาดของโรคโควิด-19 ประเทศไทย</h1>
+<p>ข้อมูลผู้ป่วยยืนยันรายบุคคล (final69_covid65.csv) · อัปเดตอัตโนมัติเมื่อไฟล์ข้อมูลในเว็บเปลี่ยน</p></header>
+<div class="wrap">
+<div class="filters">
+ <label>นับตามวันที่<select id="fDF"><option value="n">วันที่แจ้งผล (Notified)</option><option value="a">วันที่ประกาศ (Announce)</option></select></label>
+ <label>ตั้งแต่<input type="date" id="fFrom"></label>
+ <label>ถึง<input type="date" id="fTo"></label>
+ <label>จังหวัด<select id="fProv"><option value="">ทั้งหมด</option></select></label>
+ <label>เพศ<select id="fSex"><option value="">ทั้งหมด</option><option>ชาย</option><option>หญิง</option></select></label>
+ <label>กลุ่มอายุ<select id="fAge"><option value="">ทั้งหมด</option></select></label>
+ <label>ปัจจัยเสี่ยง<select id="fRisk"><option value="">ทั้งหมด</option></select></label>
+ <label>โหลดไฟล์ CSV เอง<input type="file" id="fFile" accept=".csv"></label>
+ <button id="fReset">ล้างตัวกรอง</button>
+</div>
+<div id="status">กำลังโหลดข้อมูล…</div>
+<div class="kpis" id="kpis"></div>
+
+<div class="grid">
+ <div class="card"><h2>Spot map ระดับอำเภอ</h2><small>วงกลม 1 จุด = 1 อำเภอ ขนาดตามจำนวนผู้ป่วย ตำแหน่งอ้างอิงจุดกึ่งกลางขอบเขตอำเภอจริง</small><div id="mapSpot" class="map"></div><small id="matchInfo"></small></div>
+ <div class="card"><h2>Choropleth map ระดับจังหวัด</h2>
+  <small>แสดงค่า: <select id="cMetric"><option value="n">จำนวนผู้ป่วย</option><option value="d">ความหนาแน่น (ราย/ตร.กม.)</option></select> · คลิกจังหวัดเพื่อกรอง</small>
+  <div id="mapChoro" class="map"></div></div>
+</div>
+
+<div class="card" style="margin-bottom:12px"><h2>Epidemic Curve — จำนวนผู้ป่วยรายวัน</h2><div class="ch" style="height:320px"><canvas id="cEpi"></canvas></div></div>
+
+<div class="grid">
+ <div class="card"><h2>10 จังหวัดที่มีผู้ป่วยสูงสุด</h2><div class="ch"><canvas id="cProv"></canvas></div></div>
+ <div class="card"><h2>กลุ่มอายุ</h2><div class="ch"><canvas id="cAge"></canvas></div></div>
+ <div class="card"><h2>เพศ</h2><div class="ch"><canvas id="cSex"></canvas></div></div>
+ <div class="card"><h2>ปัจจัยเสี่ยง/ประวัติการติดเชื้อ (Top 8)</h2><div class="ch"><canvas id="cRisk"></canvas></div></div>
+</div>
+<p style="font-size:.78rem;color:var(--mut)">หมายเหตุ: ไฟล์ข้อมูลไม่มีคอลัมน์ผลการรักษา/การเสียชีวิต จึงแสดงข้อมูล <b>ผู้ป่วยยืนยัน</b> ตามอำเภอ/จังหวัดที่เริ่มป่วย (province_of_onset, district_of_onset) หากไม่ระบุจะใช้จังหวัดที่รักษา (province_of_isolation) ความหนาแน่นคำนวณจากพื้นที่ในไฟล์ขอบเขตจริง ขอบเขต: OpenGISData-Thailand</p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script>
+const CSV_URL='final69_covid65.csv', POLL_MS=60000;
+const GEO='https://raw.githubusercontent.com/chingchai/OpenGISData-Thailand/master/';
+const $=id=>document.getElementById(id);
+const AGES=['0-4','5-14','15-24','25-34','35-44','45-59','60-74','75+'];
+const ageGrp=a=>a==null?'ไม่ระบุ':a<5?AGES[0]:a<15?AGES[1]:a<25?AGES[2]:a<35?AGES[3]:a<45?AGES[4]:a<60?AGES[5]:a<75?AGES[6]:AGES[7];
+const clean=s=>(s||'').replace(/[\u200b-\u200f\ufeff\s]/g,'').replace(/([\u0E31\u0E34-\u0E3A\u0E47-\u0E4E])\1+/g,'$1');
+const ALIAS={'อยุธยา':'พระนครศรีอยุธยา','นคราชสีมา':'นครราชสีมา','สุมทรสาคร':'สมุทรสาคร','สุทรสาคร':'สมุทรสาคร','ฃัยภูมิ':'ชัยภูมิ','ชอนแก่น':'ขอนแก่น','กาฬสินธ์':'กาฬสินธุ์','จันทรบุรี':'จันทบุรี','หัวไทร':'นครศรีธรรมราช','เมืองนครศรีธรรมราช':'นครศรีธรรมราช','กรุงเทพ':'กรุงเทพมหานคร','กทม.':'กรุงเทพมหานคร'};
+const normP=s=>{s=clean(s).replace(/^(จังหวัด|จ\.)/,'');return ALIAS[s]||s};
+const normD=s=>clean(s).replace(/^(อำเภอ|เขต|อ\.)/,'');
+const pick=(p,c)=>{for(const k of c)if(p[k]!=null)return p[k];for(const k in p)if(c.map(x=>x.toLowerCase()).includes(k.toLowerCase()))return p[k]};
+const PK=['pro_th','PROV_NAMT','prov_namt','pv_tn','PV_TN'],DK=['amp_th','AMP_NAMT','amp_namt','ap_tn','AP_TN'];
+const iso=s=>{const m=(s||'').trim().split('/');return m.length<3?null:m[2]+'-'+m[1].padStart(2,'0')+'-'+m[0].padStart(2,'0')};
+
+let DATA=[],GP=null,GD=null,provSet=new Set(),charts={},selProv='',meta='';
+let mS,mC,layS,layC,legC;
+
+/* ---------- load data (aggregate while streaming) ---------- */
+function load(src,isFile){
+  return new Promise(res=>{
+    const agg=new Map();let tot=0;
+    Papa.parse(src,{download:!isFile,header:true,skipEmptyLines:true,chunk:r=>{
+      for(const x of r.data){
+        tot++;
+        let p=normP(x.province_of_onset),fromIso=false;
+        if(!provSet.has(p)){p=normP(x.province_of_isolation);fromIso=true}
+        if(!provSet.has(p))continue;
+        const d=(!fromIso)?normD(x.district_of_onset):'';
+        let a=parseFloat(x.age);const u=(x.Unit||'').trim();
+        a=isNaN(a)?null:u==='ปี'?(a>120?null:Math.floor(a)):0;
+        const row=[iso(x.announce_date),iso(x['Notified date']),p,d==='ต่างจังหวัด'?'':d,(x.sex||'').trim(),ageGrp(a),a,(x.risk||'ไม่ระบุ').trim().replace(/\s+/g,' ')];
+        const k=row.join('|');const e=agg.get(k);
+        if(e)e.n++;else agg.set(k,{a:row[0],t:row[1],p:row[2],d:row[3],s:row[4]||'ไม่ระบุ',g:row[5],ag:row[6],k:row[7],n:1});
+      }},complete:()=>{DATA=[...agg.values()];res(tot)}});
+  });
+}
+
+/* ---------- filters ---------- */
+const F=()=>({df:$('fDF').value,from:$('fFrom').value,to:$('fTo').value,p:$('fProv').value,s:$('fSex').value,g:$('fAge').value,k:$('fRisk').value});
+function rows(ignoreProv){const f=F();return DATA.filter(r=>{const d=r[f.df];return d&&(!f.from||d>=f.from)&&(!f.to||d<=f.to)&&(ignoreProv||!f.p||r.p===f.p)&&(!f.s||r.s===f.s)&&(!f.g||r.g===f.g)&&(!f.k||r.k===f.k)})}
+function fillSelects(){
+  const sel=(id,vals)=>{const c=$(id).value;$(id).innerHTML='<option value="">ทั้งหมด</option>'+vals.map(v=>`<option>${v}</option>`).join('');$(id).value=vals.includes(c)?c:''};
+  sel('fProv',[...new Set(DATA.map(r=>r.p))].sort((a,b)=>a.localeCompare(b,'th')));
+  sel('fAge',AGES);
+  const rc={};DATA.forEach(r=>rc[r.k]=(rc[r.k]||0)+r.n);
+  sel('fRisk',Object.keys(rc).sort((a,b)=>rc[b]-rc[a]));
+  const ds=DATA.map(r=>r.t).filter(Boolean).sort();
+  if(ds.length){$('fFrom').min=$('fTo').min=ds[0];$('fFrom').max=$('fTo').max=ds[ds.length-1];if(!$('fFrom').value)$('fFrom').value=ds[0];if(!$('fTo').value)$('fTo').value=ds[ds.length-1]}
+}
+
+/* ---------- geometry helpers ---------- */
+function areaKm2(g){const ring=r=>{let a=0;const lat=r[0][1]*Math.PI/180,kx=111.32*Math.cos(lat),ky=110.57;for(let i=0;i<r.length-1;i++)a+=(r[i][0]*kx*r[i+1][1]*ky)-(r[i+1][0]*kx*r[i][1]*ky);return Math.abs(a/2)};
+  const poly=p=>p.reduce((s,r,i)=>s+(i?-1:1)*ring(r),0);
+  return g.type==='Polygon'?poly(g.coordinates):g.type==='MultiPolygon'?g.coordinates.reduce((s,p)=>s+poly(p),0):0}
+
+/* ---------- maps ---------- */
+function initMaps(){
+  const mk=id=>{const m=L.map(id,{zoomSnap:.25}).setView([13.2,101],5.5);L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'© OpenStreetMap'}).addTo(m);return m};
+  mS=mk('mapSpot');mC=mk('mapChoro');layS=L.layerGroup().addTo(mS);
+  GD.features.forEach(f=>{f._p=normP(pick(f.properties,PK));f._d=normD(pick(f.properties,DK));f._c=L.geoJSON(f).getBounds().getCenter()});
+  GP.features.forEach(f=>{f._p=normP(pick(f.properties,PK));f._a=areaKm2(f.geometry)});
+  layC=L.geoJSON(GP,{style:()=>({weight:.6,color:'#555',fillOpacity:.8,fillColor:'#eee'}),onEachFeature:(f,l)=>{l.on('click',()=>{const v=$('fProv').value===f._p?'':f._p;$('fProv').value=v;render()})}}).addTo(mC);
+}
+const GDI={};function indexDistricts(){GD.features.forEach(f=>{GDI[f._p+'|'+f._d]=f})}
+function findDist(p,d){if(!d)return null;
+  return GDI[p+'|'+d]||(d==='เมือง'&&GDI[p+'|เมือง'+p])||GDI[p+'|'+d.replace(/^เมือง/,'')]||(GDI[p+'|เมือง']&&d.startsWith('เมือง')?GDI[p+'|เมือง']:null)||null}
+const COL=['#fff5eb','#fee0c0','#fdbb84','#fc8d59','#e34a33','#b30000','#67000d'];
+function colorFor(v,mx){if(!v)return '#eee';const r=Math.sqrt(v/mx);return COL[Math.min(6,Math.ceil(r*6))]}
+
+/* ---------- render ---------- */
+const sum=(o,k,n)=>o[k]=(o[k]||0)+n;
+function mkChart(id,cfg){charts[id]&&charts[id].destroy();charts[id]=new Chart($(id),cfg)}
+function render(){
+  if(!DATA.length)return;
+  const R=rows(),Rm=rows(true);let tot=0,fe=0,pc={},dc={},sx={},ag={},rk={},day={},ages=[];
+  R.forEach(r=>{tot+=r.n;sum(pc,r.p,r.n);r.d&&sum(dc,r.p+'|'+r.d,r.n);sum(sx,r.s,r.n);sum(ag,r.g,r.n);sum(rk,r.k,r.n);sum(day,r[F().df],r.n);if(r.ag!=null)ages.push([r.ag,r.n])});
+  const med=(()=>{if(!ages.length)return '–';ages.sort((a,b)=>a[0]-b[0]);const h=ages.reduce((s,a)=>s+a[1],0)/2;let c=0;for(const a of ages){c+=a[1];if(c>=h)return a[0]}})();
+  const days=Object.keys(day).sort(),peak=days.reduce((b,d)=>day[d]>(day[b]||0)?d:b,days[0]);
+  const fem=sx['หญิง']||0,mal=sx['ชาย']||0;
+  $('kpis').innerHTML=[['ผู้ป่วยทั้งหมด',tot.toLocaleString()],['จังหวัดที่พบผู้ป่วย',Object.keys(pc).length],['อายุมัธยฐาน (ปี)',med],['หญิง : ชาย',(fem+mal?(fem/(fem+mal)*100).toFixed(1):0)+'% : '+(fem+mal?(mal/(fem+mal)*100).toFixed(1):0)+'%'],['วันที่สูงสุด',peak?peak+' ('+day[peak].toLocaleString()+')':'–'],['เฉลี่ยต่อวัน',days.length?Math.round(tot/days.length).toLocaleString():0]].map(k=>`<div class="kpi"><b>${k[1]}</b><span>${k[0]}</span></div>`).join('');
+
+  // Epidemic curve
+  const ma=days.map((d,i)=>{const w=days.slice(Math.max(0,i-6),i+1);return +(w.reduce((s,x)=>s+day[x],0)/w.length).toFixed(0)});
+  mkChart('cEpi',{data:{labels:days,datasets:[{type:'bar',label:'ผู้ป่วยรายวัน',data:days.map(d=>day[d]),backgroundColor:'#fb923c'},{type:'line',label:'ค่าเฉลี่ยเคลื่อนที่ 7 วัน',data:ma,borderColor:'#7c2d12',pointRadius:0,tension:.3}]},options:{maintainAspectRatio:false,scales:{y:{beginAtZero:true,title:{display:true,text:'จำนวนราย'}}}}});
+  const top=Object.entries(pc).sort((a,b)=>b[1]-a[1]).slice(0,10);
+  mkChart('cProv',{type:'bar',data:{labels:top.map(x=>x[0]),datasets:[{label:'ผู้ป่วย',data:top.map(x=>x[1]),backgroundColor:'#ea580c'}]},options:{indexAxis:'y',maintainAspectRatio:false,plugins:{legend:{display:false}}}});
+  mkChart('cAge',{type:'bar',data:{labels:AGES,datasets:[{label:'ผู้ป่วย',data:AGES.map(a=>ag[a]||0),backgroundColor:'#0d9488'}]},options:{maintainAspectRatio:false,plugins:{legend:{display:false}}}});
+  mkChart('cSex',{type:'doughnut',data:{labels:Object.keys(sx),datasets:[{data:Object.values(sx),backgroundColor:['#ec4899','#3b82f6','#9ca3af']}]},options:{maintainAspectRatio:false}});
+  const rt=Object.entries(rk).sort((a,b)=>b[1]-a[1]).slice(0,8);
+  mkChart('cRisk',{type:'bar',data:{labels:rt.map(x=>x[0].slice(0,34)),datasets:[{label:'ผู้ป่วย',data:rt.map(x=>x[1]),backgroundColor:'#7c3aed'}]},options:{indexAxis:'y',maintainAspectRatio:false,plugins:{legend:{display:false}}}});
+
+  // Choropleth (ไม่กรองจังหวัด เพื่อให้เห็นทุกจังหวัด)
+  const pcAll={};Rm.forEach(r=>sum(pcAll,r.p,r.n));const metric=$('cMetric').value,sel=$('fProv').value;
+  const val={};GP.features.forEach(f=>val[f._p]=metric==='n'?(pcAll[f._p]||0):(pcAll[f._p]||0)/f._a);
+  const mx=Math.max(...Object.values(val),1e-9);
+  layC.eachLayer(l=>{const p=l.feature._p,v=val[p]||0;l.setStyle({fillColor:colorFor(v,mx),weight:p===sel?3:.6,color:p===sel?'#000':'#555'});
+    l.bindTooltip(`${p}<br>ผู้ป่วย ${(pcAll[p]||0).toLocaleString()} ราย<br>${(pcAll[p]/l.feature._a||0).toFixed(2)} ราย/ตร.กม.`,{sticky:true})});
+  legC&&legC.remove();legC=L.control({position:'bottomright'});legC.onAdd=()=>{const d=L.DomUtil.create('div','legend');d.innerHTML=`<b>${metric==='n'?'ราย':'ราย/ตร.กม.'}</b><br>`+COL.map((c,i)=>{const lo=i?mx*(((i-1)/6)**2):0,hi=mx*((i/6)**2);return i?`<i style="background:${c}"></i>${lo.toFixed(metric==='n'?0:2)} – ${hi.toFixed(metric==='n'?0:2)}<br>`:''}).join('');return d};legC.addTo(mC);
+
+  // Spot map
+  layS.clearLayers();let matched=0,unm=0;const dm=Math.max(...Object.values(dc),1);
+  Object.entries(dc).forEach(([k,n])=>{const [p,d]=k.split('|'),f=findDist(p,d);if(!f){unm+=n;return}matched+=n;
+    L.circleMarker(f._c,{radius:3+14*Math.sqrt(n/dm),color:'#7f1d1d',weight:1,fillColor:'#ef4444',fillOpacity:.55})
+     .bindPopup(`<b>อ.${d}</b> จ.${p}<br>${n.toLocaleString()} ราย`).addTo(layS)});
+  const withD=matched+unm;
+  $('matchInfo').textContent=`จับคู่อำเภอกับขอบเขตจริงได้ ${withD?(matched/withD*100).toFixed(1):0}% ของผู้ป่วยที่ระบุอำเภอ (${matched.toLocaleString()}/${withD.toLocaleString()} ราย)`;
+  if(sel){const f=GP.features.find(x=>x._p===sel);if(f){const b=L.geoJSON(f).getBounds();mS.fitBounds(b);}}
+}
+
+/* ---------- boot & real-time ---------- */
+let lastSig='';
+async function reload(isFile,file){
+  $('status').textContent='กำลังประมวลผลข้อมูล…';
+  const t=await load(isFile?file:CSV_URL+'?t='+Date.now(),isFile);
+  fillSelects();render();
+  $('status').textContent=`ข้อมูล ${t.toLocaleString()} แถว · รวมเป็น ${DATA.length.toLocaleString()} กลุ่มเพื่อแสดงผล · อัปเดตล่าสุด ${new Date().toLocaleTimeString('th-TH')}`;
+}
+async function poll(){try{const h=await fetch(CSV_URL,{method:'HEAD',cache:'no-store'});const sig=(h.headers.get('etag')||'')+(h.headers.get('last-modified')||'')+(h.headers.get('content-length')||'');if(lastSig&&sig&&sig!==lastSig){lastSig=sig;reload()}else lastSig=lastSig||sig}catch(e){}}
+async function boot(){
+  try{
+    const [p,d]=await Promise.all([fetch(GEO+'provinces.geojson').then(r=>r.json()),fetch(GEO+'districts.geojson').then(r=>r.json())]);
+    GP=p;GD=d;GP.features.forEach(f=>provSet.add(normP(pick(f.properties,PK))));
+    initMaps();indexDistricts();
+  }catch(e){$('status').textContent='โหลดไฟล์ขอบเขตแผนที่ไม่สำเร็จ: '+e.message;return}
+  try{await reload();poll()}catch(e){$('status').textContent='โหลด '+CSV_URL+' ไม่สำเร็จ — เลือกไฟล์ CSV ด้วยตนเองได้ที่ช่อง "โหลดไฟล์ CSV เอง"'}
+  setInterval(poll,POLL_MS);
+}
+['fDF','fFrom','fTo','fProv','fSex','fAge','fRisk','cMetric'].forEach(i=>$(i).addEventListener('change',render));
+$('fReset').onclick=()=>{['fProv','fSex','fAge','fRisk'].forEach(i=>$(i).value='');$('fFrom').value=$('fFrom').min;$('fTo').value=$('fTo').max;mS&&mS.setView([13.2,101],5.5);render()};
+$('fFile').onchange=e=>e.target.files[0]&&reload(true,e.target.files[0]);
+boot();
+</script>
+</body>
+</html>
